@@ -24,71 +24,74 @@
 
 static void start_scan(void);
 
+K_WORK_DELAYABLE_DEFINE(scan_work, start_scan);
+
 static struct bt_conn *conn_connecting = NULL;
-static uint8_t volatile conn_count;
-static bool volatile is_connecting = false;
+static uint8_t volatile conn_count = 0;
 
 static bool find_device_name(struct bt_data *data, void *user_data)
 {
-    char* device_name = user_data;
+    bt_addr_le_t *addr = user_data;
+    char device_name[31];
 
     // a return value of "false" will stop data parsing by bt_data_parse
 
     if (data->type == BT_DATA_NAME_COMPLETE) {
         memcpy(device_name, data->data, data->data_len);
         device_name[data->data_len] = '\0';
-        return false;
-    }
-    else {
-        return true;
-    }
+        
+        if (strcmp(device_name, "DXC") == 0) {
+
+            int err;
+
+            err = bt_le_scan_stop();
+            if (err) {
+                printk("Stop LE scan failed (err %d)\n", err);
+                // I am unsure the of the proper way to handle a
+                // bt_le_scan_stop failure but I know a connection should not be 
+                // attempted if it fails
+                continue;
+            }
+
+	        err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, 
+                                BT_LE_CONN_PARAM_DEFAULT, &conn_connecting);
+            if (err) {
+            printk("Create conn failed (%d)\n", err);
+            }
+
+            return false;
+
+        } 
+    } 
+    
+    return true;
+    
 }
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
 	char addr_str[BT_ADDR_LE_STR_LEN];
-	int err;
-    char device_name[31];
-    memset(device_name, 0, sizeof(device_name));
 
-	if (conn_connecting) {
-		return;
-	}
+    bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
+	printk("Device found: %s (RSSI %d)\n", addr_str, rssi);
+	
+    if (conn_connecting) {
+        return; 
+    }
 
 	/* We're only interested in connectable events */
 	if (type != BT_GAP_ADV_TYPE_ADV_IND &&
 	    type != BT_GAP_ADV_TYPE_ADV_DIRECT_IND) {
 		return;
-	}
-
-	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	printk("Device found: %s (RSSI %d)\n", addr_str, rssi);
-
-    // bt_data_parse accepts a buffer of the ad data, 
-    // a callback function, and a place to store the parsed data
-
-    bt_data_parse(ad, find_device_name, (void *)device_name);
-    printk("Device name: %s\n", device_name);
+	}    
 
 	/* connect only to devices in close proximity */
 	if (rssi < -50) {
 		return;
 	}
 
-	if (bt_le_scan_stop()) {
-        printk("Scanning successfully stopped\n");
-		return;
-	}
-
-    is_connecting = true;
-	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
-				BT_LE_CONN_PARAM_DEFAULT, &conn_connecting);
-	if (err) {
-        is_connecting = false;
-		printk("Create conn to %s failed (%d)\n", addr_str, err);
-		start_scan();
-	}
+    bt_data_parse(ad, find_device_name, (void *)addr);
 }
 
 static void start_scan(void)
@@ -99,6 +102,7 @@ static void start_scan(void)
 	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
 	if (err) {
 		printk("Scanning failed to start (err %d)\n", err);
+        k_work_schedule(&scan_work, K_SECONDS(1));
 		return;
 	}
 
@@ -111,14 +115,13 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
-    is_connecting = false;
 	if (err) {
 		printk("Failed to connect to %s (%u)\n", addr, err);
 
-		bt_conn_unref(conn_connecting);
+		bt_conn_unref(conn);
 		conn_connecting = NULL;
 
-		start_scan();
+		k_work_schedule(&scan_work, K_SECONDS(1));
 		return;
 	}
 
@@ -127,6 +130,10 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	conn_count++;
 
 	printk("Connected: %s\n", addr);
+
+    if (conn_count < 5) {
+        k_work_schedule(&scan_work, K_SECONDS(1));
+    }
 
 #if defined(CONFIG_BT_SMP)
     int sec_err = bt_conn_set_security(conn, BT_SECURITY_L2);
@@ -149,6 +156,10 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_conn_unref(conn);
 	
 	conn_count--;
+
+    if (conn_count < 5) {
+        k_work_schedule(&scan_work, K_SECONDS(1));
+    }
 }
 
 #if defined(CONFIG_BT_SMP)
@@ -204,19 +215,7 @@ int main(void)
 
     bt_conn_cb_register(&conn_callbacks);
 
-	start_scan();
-
-    while (true) {
-        
-        // take breaks inbetween scanning to not overload system
-
-        k_sleep(K_MSEC(100));
-
-        // initiate a scan if max device count is not reached and a device is not currently being connected.
-        if (conn_count < CONFIG_BT_MAX_CONN && !is_connecting) {
-            start_scan();
-        }
-    }
+	k_work_schedule(&scan_work, K_NO_WAIT);
 
 	return 0;
 }
