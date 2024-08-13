@@ -1,0 +1,2 @@
+osource "/Users/jacobjunk/dev/zephyr/central/stel-fw-interview/boards/shields/*/Kconfig.defconfig"
+osource "/opt/nordic/ncs/v2.7.0/nrf/boards/shields/*/Kconfig.defconfig"
