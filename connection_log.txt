@@ -1,0 +1,32 @@
+*** Booting nRF Connect SDK v2.7.0-5cb85570ca43 ***
+*** Using Zephyr OS v3.6.99-100befc70c74 ***
+Bluetooth Initialized.
+Max Connections: 2
+======================
+Scanning successfully started.
+Matching device found.
+Initiating connection to: DXC
+Device Connected. Current connection count: 1
+Scheduling scan.
+Scanning successfully started.
+Matching device found.
+Initiating connection to: Jacobs IPhone
+Device Connected. Current connection count: 2
+Max device count reached. Not scanning.
+Device disconnected. Current connection count: 1
+Scheduling scan.
+Scanning successfully started.
+Device disconnected. Current connection count: 0
+Matching device found.
+Initiating connection to: DXC
+Device Connected. Current connection count: 1
+Scheduling scan.
+Scanning successfully started.
+Matching device found.
+Initiating connection to: Jacobs IPhone
+Device Connected. Current connection count: 2
+Max device count reached. Not scanning.
+Device disconnected. Current connection count: 1
+Scheduling scan.
+Scanning successfully started.
+Device disconnected. Current connection count: 0

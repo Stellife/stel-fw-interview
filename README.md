@@ -1,54 +1,26 @@
-bt_data_parse accepts three parameters: a buffer of the ad data, a callback function, and a pointer where the parsed data of interest can be stored.
-
-Line 52 and 53 of main.c define the character array that will be used to store the parsed data. The variable decays to a pointer to the first element of the array when passed to bt_data_parse.
-
-bt_data_parse calls find_device_name repeated until false is returns. False indicates the device name has been found and parsing can stop.
-
-Device name is printed using printk.
-
-## Q2 - Implementation Summary
-
-Support for multiple devices is effectively managed by utilizing 3 global variables.
-```c
-static struct bt_conn *conn_connecting = NULL;
-static uint8_t volatile conn_count;
-static bool volatile is_connecting = false;
-```
-bt_conn is the major data structure used in Zephyr's Bluetooth stack that keeps track of a connected device's important information. It is passed to bt_conn_le_create, which creates the connection and adds it to a list of connected devices. 
-```c
-bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
-				BT_LE_CONN_PARAM_DEFAULT, &conn_connecting);
-```
-In the connected function, is_connecting is set back to false, conn_connecting is set back to NULL and conn_count is incremented. Similar logic is used in disconnected callback function.
-```c
-is_connecting = false;
-conn_connecting = NULL;
-conn_count++;
-```
-Main enters an infinite while loop after initiating the first scan. The while loop will check to see if a new scan should be initiated and intermittently yield CPU.
-```c
-k_sleep(K_MSEC(100));
-
-if (conn_count < CONFIG_BT_MAX_CONN && !is_connecting) {
-    start_scan();
-}
-```
-## Other Functionality Implemented
-- The settings subsystem was configured to store device pairing information.
-- SMP was configured for additional security.
-- Privacy was configured for added anonymity.
-## prj.conf
-- System is configured to support up to 5 simultaneous connections and remember up to 10 devices.
-```
-CONFIG_BT=y 
-CONFIG_BT_CENTRAL=y
-CONFIG_BT_MAX_CONN=5
-CONFIG_BT_MAX_PAIRED=10 
-CONFIG_BT_SMP=y 
-CONFIG_BT_PRIVACY=y
-CONFIG_BT_SETTINGS=y
-CONFIG_SETTINGS=y
-CONFIG_BT_HCI=y
-```
-### Files Changed
-main.c and prj.conf
+# Updates Made
+- Removed functionality unrelated to interview questions
+- Tested project using Adafruit ItsyBitsy, nRF Connect BLE Desktop, & nRF Connect Mobile
+- Monitored printk messages using screen command, wrote output to connection_log.txt
+## Application Description
+This application supports up to two simultaneous BLE connections. It will only connect to devices being advertised as either "DXC" or "Jacobs IPhone". Connections are managed using a struct bt_conn array. Scan scheduling is done using a delayable work item. It can support more than two connections if CONFIG_BT_MAX_CONN is increased, but has not been tested for more than 2.
+## Q1 Implementation
+- bt_data_parse() is called in device_found()
+- the callback function, find_device_name(), checks if the device name is a match, and initiates a connection if so
+- is_device_connected() is also called inside of find_device_name() to ensure a connection isn't attempted to an already connected device
+## Q2 Implmentation
+- struct array "connections" of type bt_conn manages connections
+- global variable conn_count keeps track of # of connections
+- bt_le_conn_creat adds connections to connections array
+- connected() function increments count
+- disconnected() function removes connections and decrements count
+## Scanning
+Scanning is managed by scheduling a work item with a handler that calls start_scan(). If a connection is made and conn_count is less than 2, another scan will be scheduled. If max connection count (2) is reached, a new scan will not be initiated. If a device is disconnected and a scan is not active, another scan will be scheduled. Global variable scan_active is used to check if scan is currently active.
+## Testing
+I used nRF Connect Mobile to advertise a BLE device named "Jacobs IPhone" and my laptop with a dongle and nRF Connect BLE Desktop to advertise BLE device "DXC". Printk messages are spread throughout main.c. I monitored these by connecting to the ItsyBitsy's serial port and wrote the output to file (see connection_log.txt).
+### Files Updated
+- main.c
+- prj.conf
+- build folder
+### Files Added
+- connection_log.txt
